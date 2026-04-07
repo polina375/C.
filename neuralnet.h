@@ -60,7 +60,7 @@ namespace Neural {
             return sigmoid(z) >= threshold ? 1 : 0;
         }
 
-        // --- Существующие геттеры для кэша (оставляем) ---
+        //  Геттеры для кэша 
         const std::vector<T>& getHiddenZ() const { return z_h; }
         const std::vector<T>& getHiddenA() const { return a_h; }
         T getOutputZ() const { return z_o; }
@@ -81,7 +81,7 @@ namespace Neural {
         void setWeightsHO(const std::vector<T>& w) { w_ho = w; }
         void setBiasO(T b) { b_o = b; }
 
-        // --- Существующие методы для сохранения/загрузки всех весов (оставляем) ---
+        // ---  Методы для сохранения/загрузки всех весов ---
         std::vector<T> getWeights() const {
             std::vector<T> all;
             all.insert(all.end(), w_ih.begin(), w_ih.end());
