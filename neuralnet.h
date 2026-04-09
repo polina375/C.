@@ -1,118 +1,137 @@
 #pragma once
 #include <vector>
 #include <cmath>
-#include <concepts>
-#include "types.h"
+#include "types.h"      // Здесь находятся Arithmetic и Point2D
+#include "console.h"
 
 namespace Neural {
 
-    template<typename T>
-    concept Arithmetic = std::is_arithmetic_v<T>;
-
+    // Шаблонный класс простой нейронной сети для бинарной классификации
+    // Архитектура: 2 входа → скрытый слой (hiddenSize нейронов) → 1 выход (сигмоида)
     template<Arithmetic T>
     class NeuralNetwork {
     public:
-        // Конструктор: hiddenSize – число нейронов в скрытом слое
-        explicit NeuralNetwork(int hiddenSize = 4)
-            : hiddenSize(hiddenSize)
-            , w_ih(2 * hiddenSize)  // веса вход->скрытый
-            , b_h(hiddenSize)       // смещения скрытого
-            , w_ho(hiddenSize)      // веса скрытый->выход
-            , b_o(0)                // смещение выхода
-        {
-            // Инициализация случайными числами в [-0.5, 0.5]
-            for (auto& w : w_ih) w = rand() / (T(RAND_MAX) + 1) - T(0.5);
-            for (auto& b : b_h) b = rand() / (T(RAND_MAX) + 1) - T(0.5);
-            for (auto& w : w_ho) w = rand() / (T(RAND_MAX) + 1) - T(0.5);
-            b_o = rand() / (T(RAND_MAX) + 1) - T(0.5);
-        }
+        // Конструктор
+        // hiddenSize - количество нейронов в скрытом слое (по умолчанию 4)
+        explicit NeuralNetwork(int hiddenSize = 4);
 
-        // Прямой проход (кэширует z_h, a_h, z_o, a_o)
-        T forward(T x, T y) {
-            // Скрытый слой
-            z_h.resize(hiddenSize);
-            a_h.resize(hiddenSize);
-            for (int i = 0; i < hiddenSize; ++i) {
-                z_h[i] = w_ih[2 * i] * x + w_ih[2 * i + 1] * y + b_h[i];
-                a_h[i] = sigmoid(z_h[i]);
-            }
-            // Выходной слой
-            z_o = 0;
-            for (int i = 0; i < hiddenSize; ++i) z_o += w_ho[i] * a_h[i];
-            z_o += b_o;
-            a_o = sigmoid(z_o);
-            return a_o;
-        }
+        // Прямой проход (forward pass)
+        // Принимает точку и возвращает вероятность класса 1 (значение от 0 до 1)
+        T forward(const Point2D& p);
 
-        T forward(const Point2D& p) { return forward(T(p.x), T(p.y)); }
+        // Предсказание класса
+        // Возвращает 0 или 1 в зависимости от того, превышает ли вероятность порог
+        int predictClass(const Point2D& p, T threshold = T(0.5)) const;
 
-        // Предсказание класса (0 или 1)
-        int predictClass(const Point2D& p, T threshold = T(0.5)) const {
-            // Временный расчёт (не меняет кэш, т.к. метод const)
-            std::vector<T> a_h_tmp(hiddenSize);
-            for (int i = 0; i < hiddenSize; ++i) {
-                T z = w_ih[2 * i] * T(p.x) + w_ih[2 * i + 1] * T(p.y) + b_h[i];
-                a_h_tmp[i] = sigmoid(z);
-            }
-            T z = 0;
-            for (int i = 0; i < hiddenSize; ++i) z += w_ho[i] * a_h_tmp[i];
-            z += b_o;
-            return sigmoid(z) >= threshold ? 1 : 0;
-        }
+        // ===================== Геттеры и сеттеры =====================
+        // Эти методы нужны Trainer'у для обучения (backpropagation)
 
-        //  Геттеры для кэша 
-        const std::vector<T>& getHiddenZ() const { return z_h; }
-        const std::vector<T>& getHiddenA() const { return a_h; }
-        T getOutputZ() const { return z_o; }
-        T getOutputA() const { return a_o; }
-
-        // --- НОВЫЕ методы---
         int getHiddenSize() const { return hiddenSize; }
 
-        // Геттеры для весов и смещений (возвращаем константные ссылки для производительности)
+        // Возвращает активации скрытого слоя после последнего forward
+        const std::vector<T>& getHiddenA() const { return a_h; }
+
+        // Геттеры весов и смещений (используются при обновлении весов)
+        const std::vector<T>& getWeightsHO() const { return w_ho; }
         const std::vector<T>& getWeightsIH() const { return w_ih; }
         const std::vector<T>& getBiasesH() const { return b_h; }
-        const std::vector<T>& getWeightsHO() const { return w_ho; }
         T getBiasO() const { return b_o; }
 
-        // Сеттеры для весов и смещений (позволяют обновлять значения при обучении)
+        // Сеттеры — позволяют Trainer обновлять веса после вычисления градиентов
+        void setWeightsHO(const std::vector<T>& w) { w_ho = w; }
         void setWeightsIH(const std::vector<T>& w) { w_ih = w; }
         void setBiasesH(const std::vector<T>& b) { b_h = b; }
-        void setWeightsHO(const std::vector<T>& w) { w_ho = w; }
         void setBiasO(T b) { b_o = b; }
 
-        // ---  Методы для сохранения/загрузки всех весов ---
-        std::vector<T> getWeights() const {
-            std::vector<T> all;
-            all.insert(all.end(), w_ih.begin(), w_ih.end());
-            all.insert(all.end(), b_h.begin(), b_h.end());
-            all.insert(all.end(), w_ho.begin(), w_ho.end());
-            all.push_back(b_o);
-            return all;
-        }
-
-        void setWeights(const std::vector<T>& w) {
-            size_t pos = 0;
-            for (size_t i = 0; i < w_ih.size(); ++i) w_ih[i] = w[pos++];
-            for (size_t i = 0; i < b_h.size(); ++i) b_h[i] = w[pos++];
-            for (size_t i = 0; i < w_ho.size(); ++i) w_ho[i] = w[pos++];
-            b_o = w[pos];
-        }
-
     private:
-        int hiddenSize;
-        std::vector<T> w_ih;   // веса вход -> скрытый (2*hiddenSize)
-        std::vector<T> b_h;    // смещения скрытого слоя
-        std::vector<T> w_ho;   // веса скрытый -> выход
-        T b_o;                 // смещение выхода
+        // Инициализация всех весов и смещений случайными значениями
+        void initWeights();
 
-        // Кэш для прямого прохода (изменяются в forward)
-        std::vector<T> z_h;    // взвешенная сумма на скрытом слое
-        std::vector<T> a_h;    // выход скрытого слоя (после сигмоиды)
-        T z_o;                 // взвешенная сумма на выходе
-        T a_o;                 // выход сети (после сигмоиды)
+        // ===================== Основные параметры сети =====================
+        int hiddenSize;                 // количество нейронов в скрытом слое
 
-        static T sigmoid(T x) { return T(1) / (T(1) + std::exp(-x)); }
+        std::vector<T> w_ih;            // веса от входа к скрытому слою (2 * hiddenSize)
+        std::vector<T> b_h;             // смещения скрытого слоя
+        std::vector<T> w_ho;            // веса от скрытого слоя к выходу
+        T b_o;                          // смещение выходного нейрона
+
+        // ===================== Кэш для forward pass =====================
+        // Эти поля заполняются при вызове forward() и используются в обучении
+        std::vector<T> z_h;             // взвешенная сумма (до активации) на скрытом слое
+        std::vector<T> a_h;             // активации (после сигмоиды) скрытого слоя
+        T z_o = 0;                      // взвешенная сумма на выходном слое
+        T a_o = 0;                      // финальная активация (вероятность)
+
+        // Функция активации — сигмоида
+        T sigmoid(T x) const {
+            return T(1) / (T(1) + std::exp(-x));
+        }
     };
+
+    // ===================== Реализация методов =====================
+
+    // Конструктор
+    template<Arithmetic T>
+    NeuralNetwork<T>::NeuralNetwork(int hs) : hiddenSize(hs) {
+        w_ih.resize(2 * hs);
+        b_h.resize(hs);
+        w_ho.resize(hs);
+        initWeights();
+    }
+
+    // Инициализация весов случайными значениями в диапазоне [-0.5, 0.5]
+    template<Arithmetic T>
+    void NeuralNetwork<T>::initWeights() {
+        for (auto& w : w_ih) w = T(rand()) / RAND_MAX - T(0.5);
+        for (auto& b : b_h)  b = T(rand()) / RAND_MAX - T(0.5);
+        for (auto& w : w_ho) w = T(rand()) / RAND_MAX - T(0.5);
+        b_o = T(rand()) / RAND_MAX - T(0.5);
+    }
+
+    // Прямой проход через сеть
+    template<Arithmetic T>
+    T NeuralNetwork<T>::forward(const Point2D& p) {
+        z_h.resize(hiddenSize);
+        a_h.resize(hiddenSize);
+
+        // === Скрытый слой ===
+        for (int i = 0; i < hiddenSize; ++i) {
+            // Вычисляем взвешенную сумму + смещение
+            z_h[i] = w_ih[2 * i] * T(p.x) + w_ih[2 * i + 1] * T(p.y) + b_h[i];
+            // Применяем сигмоиду
+            a_h[i] = sigmoid(z_h[i]);
+        }
+
+        // === Выходной слой ===
+        z_o = b_o;                                   // начинаем со смещения
+        for (int i = 0; i < hiddenSize; ++i) {
+            z_o += w_ho[i] * a_h[i];                 // суммируем взвешенные активации
+        }
+
+        a_o = sigmoid(z_o);                          // финальная сигмоида
+        return a_o;
+    }
+
+    // Предсказание класса (0 или 1)
+    template<Arithmetic T>
+    int NeuralNetwork<T>::predictClass(const Point2D& p, T threshold) const {
+        // Временный вектор для активаций скрытого слоя (не сохраняем в кэш)
+        std::vector<T> a(hiddenSize);
+
+        // Считаем скрытый слой
+        for (int i = 0; i < hiddenSize; ++i) {
+            T z = w_ih[2 * i] * T(p.x) + w_ih[2 * i + 1] * T(p.y) + b_h[i];
+            a[i] = sigmoid(z);
+        }
+
+        // Считаем выход
+        T z = b_o;
+        for (int i = 0; i < hiddenSize; ++i) {
+            z += w_ho[i] * a[i];
+        }
+
+        // Применяем порог
+        return sigmoid(z) >= threshold ? 1 : 0;
+    }
 
 } // namespace Neural
