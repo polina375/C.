@@ -1,14 +1,17 @@
 #include "types.h"
+#include "trainer.h"
 #include "linear.h"
 #include "dataset.h"
 #include "evaluation.h"
 #include "console.h"
 #include "neuralnet.h"
+#include <ctime>   
+#include <cstdlib> 
 
 int main() {
-
+    srand(time(0));  // задаёт seed (начальное значение) для генератора случайных чисел
     Console::info("Laboratory Work: Linear Binary Classification");
-     // Коэффициенты прямой для бинарной классификации: y = k*x + b
+    // Коэффициенты прямой для бинарной классификации: y = k*x + b
     float k = 0.75f;
     float b = -0.25f;
 
@@ -62,6 +65,42 @@ int main() {
     Console::value("Predicted class", predictedClass);
 
     Console::info("Note: Network weights are random, no training yet.");
+    // Обучение нейронной сети
+    Console::info("Starting neural network training");
+
+    // Создаём новую сеть для обучения (можно использовать ту же, но лучше новую)
+    Neural::NeuralNetwork<float> trainNet(8);  // 8 нейронов в скрытом слое
+
+    // Обучаем сеть
+    Console::info("Training network with backpropagation...");
+    Neural::Trainer::train<float>(trainNet, data, 200, 0.1f);
+
+    // Проверяем точность после обучения
+    Console::info("Results");
+
+    // Считаем точность на всех данных
+    int correct = 0;
+    for (const auto& point : data) {
+        if (trainNet.predictClass(point) == (int)point.label) {
+            correct++;
+        }
+    }
+    float accuracy = (float)correct / data.size();
+    Console::value("Accuracy after training", accuracy);
+
+    // Сравнение с первой точкой (той же, что и в демо)
+    float trainedProbability = trainNet.forward(testPoint);
+    int trainedClass = trainNet.predictClass(testPoint);
+
+    Console::info("Comparison (same point as before):");
+    Console::value("Before training - probability", probability);
+    Console::value("Before training - class", predictedClass);
+    Console::value("After training - probability", trainedProbability);
+    Console::value("After training - class", trainedClass);
+    Console::value("True label", testPoint.label);
+
+    Console::info("Training complete");
+
 
     return 0;
 }
