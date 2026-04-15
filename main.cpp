@@ -1,106 +1,65 @@
 #include "types.h"
-#include "trainer.h"
-#include "linear.h"
 #include "dataset.h"
+#include "linear.h"
 #include "evaluation.h"
 #include "console.h"
 #include "neuralnet.h"
-#include <ctime>   
-#include <cstdlib> 
+#include "trainer.h"
+#include "metrics.h"    
+#include <ctime>
+#include <cstdlib>
 
 int main() {
-    srand(time(0));  // задаёт seed (начальное значение) для генератора случайных чисел
-    Console::info("Laboratory Work: Linear Binary Classification");
-    // Коэффициенты прямой для бинарной классификации: y = k*x + b
+    // Фиксируем seed для повторяемости результатов
+    srand(42);
+
+    Console::info("Laboratory Work 2: Neural Network Binary Classification");
+
     float k = 0.75f;
     float b = -0.25f;
 
+    // 1. Генерация датасета
     Console::info("Generating dataset...");
+    auto allData = Dataset::generate(500, k, b);
 
-    // Генерация 250 точек на плоскости с метками 0 или 1
-    // Метка зависит от того, находится ли точка выше или ниже линии y = k*x + b
-    auto data = Dataset::generate(250, k, b);
+    // 2. Разделение на обучающую и тестовую выборки (80/20)
+    auto [trainData, testData] = Dataset::split(allData, 0.8f);
 
+    Console::value("Total samples", static_cast<float>(allData.size()));
+    Console::value("Train samples", static_cast<float>(trainData.size()));
+    Console::value("Test samples", static_cast<float>(testData.size()));
 
-    // Матрица линейного преобразования 2x2
-    // Применяется к координатам точек (для демонстрации работы с матрицами)
-    float transform[2][2] = { {1.0f,0.1f},{0.05f,1.0f} };
+    // 3. Создание и обучение нейронной сети
+    Console::info("Creating Neural Network (hidden size = 8)");
+    Neural::NeuralNetwork<float> net(8);
 
-    // Берём первую точку и применяем линейное преобразование
-    float oldX = data[0].x;
-    float oldY = data[0].y;
-
-    auto newVec = Linear::transform(transform, oldX, oldY);
-
-
-    // Матрица линейного преобразования 2x2
-    // Применяется к координатам точек (для демонстрации работы с матрицами)
-    Console::value("Original X", oldX);
-    Console::value("Transformed X", newVec.x);
-
-    // Вычисляем среднюю абсолютную ошибку
-    float error = Evaluation::meanAbsError(data, k, b);
-    Console::value("Mean Absolute Error", error);
-
-    // Сохраняем CSV для визуализации
-    if (Dataset::saveCSV(data, "../points.csv"))
-        Console::info("Dataset saved to ../points.csv");
-
-
-    //  Демонстрация нейронной сети (прямой проход) 
-    Console::info(" Neural Network forward pass demo");
-
-    // Создаём сеть: 4 нейрона в скрытом слое, тип float
-    Neural::NeuralNetwork<float> net(4);
-
-    // Берём первую точку из датасета и прогоняем через сеть
-    Point2D testPoint = data[0];
-    float probability = net.forward(testPoint);
-    int predictedClass = net.predictClass(testPoint);
-
-    Console::value("Test point x", testPoint.x);
-    Console::value("Test point y", testPoint.y);
-    Console::value("True label", testPoint.label);
-    Console::value("Network probability", probability);
-    Console::value("Predicted class", predictedClass);
-
-    Console::info("Note: Network weights are random, no training yet.");
-    // Обучение нейронной сети
-    Console::info("Starting neural network training");
-
-    // Создаём новую сеть для обучения (можно использовать ту же, но лучше новую)
-    Neural::NeuralNetwork<float> trainNet(8);  // 8 нейронов в скрытом слое
-
-    // Обучаем сеть
     Console::info("Training network with backpropagation...");
-    Neural::Trainer::train<float>(trainNet, data, 200, 0.1f);
+    Neural::Trainer::train(net, trainData, 250, 0.12f);
 
-    // Проверяем точность после обучения
-    Console::info("Results");
+    // 4. Оценка качества на тестовой выборке
+    Console::info("Evaluation on Test Set");
+    Metrics::ClassificationMetrics metrics = Metrics::evaluate(net, testData);
 
-    // Считаем точность на всех данных
-    int correct = 0;
-    for (const auto& point : data) {
-        if (trainNet.predictClass(point) == (int)point.label) {
-            correct++;
-        }
-    }
-    float accuracy = (float)correct / data.size();
-    Console::value("Accuracy after training", accuracy);
+    Console::value("Accuracy ", metrics.accuracy);
+    Console::value("Precision", metrics.precision);
+    Console::value("Recall   ", metrics.recall);
+    Console::value("F1-score ", metrics.f1);
 
-    // Сравнение с первой точкой (той же, что и в демо)
-    float trainedProbability = trainNet.forward(testPoint);
-    int trainedClass = trainNet.predictClass(testPoint);
+    // 5. Сравнение с линейной моделью из первой лабораторной
+    Console::info("Comparison with Linear Classifier (y = k*x + b)");
+    float linearAcc = Evaluation::accuracyLinear(testData, k, b);
+    Console::value("Linear model accuracy", linearAcc);
+    Console::value("Neural Network accuracy", metrics.accuracy);
 
-    Console::info("Comparison (same point as before):");
-    Console::value("Before training - probability", probability);
-    Console::value("Before training - class", predictedClass);
-    Console::value("After training - probability", trainedProbability);
-    Console::value("After training - class", trainedClass);
-    Console::value("True label", testPoint.label);
+    // 6. Сохранение предсказаний в CSV
+    Metrics::savePredictions(net, allData, "../predictions.csv");
 
-    Console::info("Training complete");
+    // 7. Вывод матрицы ошибок
+    Metrics::printConfusionMatrix(net, testData);
 
+    // 8. Демонстрация работы сети на сетке точек
+    Metrics::predictOnGrid(net, k, b, 8);
 
+    Console::info("Laboratory work 2 is done!");
     return 0;
 }
